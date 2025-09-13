@@ -1,39 +1,45 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import path from 'path';
-import fs from 'fs/promises';
+import fs from 'fs';
 import imageProcessor from '../services/imageProcessor';
 
-const router = Router();
+const router: Router = Router();
 
 // GET /api/images?filename=encenadaport&width=200&height=200
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const filename = String(req.query.filename || '').trim();
-    const width = req.query.width ? parseInt(String(req.query.width), 10) : undefined;
-    const height = req.query.height ? parseInt(String(req.query.height), 10) : undefined;
+    const filename: string = String(req.query.filename || '').trim();
+    const width: number | undefined = req.query.width ? parseInt(String(req.query.width), 10) : undefined;
+    const height: number | undefined = req.query.height ? parseInt(String(req.query.height), 10) : undefined;
 
     if (!filename) {
-      return res.status(400).json({ error: 'filename query param is required' });
+      res.status(400).json({ error: 'filename query param is required' });
+      return;
     }
-    if (!width && !height) {
-      return res.status(400).json({ error: 'width or height query param is required' });
+    if (!width || !height || isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+      res.status(400).json({ error: 'Valid width and height are required' });
+      return;
     }
 
-    const imagesDir = path.join(__dirname, '..', '..', 'images');
-    const originalPath = path.join(imagesDir, `${filename}.jpg`);
+    const imagesDir: string = path.join(__dirname, '..', '..', 'images');
+    const originalPath: string = path.join(imagesDir, `${filename}.jpg`);
+
+  // check if image exist 
+    if (!fs.existsSync(originalPath)) {
+      res.status(404).json({ error: 'Original image not found' });
+      return;
+    }
 
     try {
-      await fs.access(originalPath);
+      const outputPath: string = await imageProcessor.resizeAndCache(originalPath, { width, height });
+      res.sendFile(outputPath);
     } catch (err) {
-      return res.status(404).json({ error: 'Original image not found' });
+      console.error(err);
+      res.status(500).json({ error: 'Failed to process image' });
     }
-
-    const outputPath = await imageProcessor.resizeAndCache(originalPath, { width, height });
-
-    return res.sendFile(outputPath);
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
